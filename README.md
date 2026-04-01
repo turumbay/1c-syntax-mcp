@@ -57,7 +57,7 @@ sudo yum install p7zip       # RHEL/CentOS
   "mcp": {
     "1c-syntax": {
       "type": "local",
-      "command": ["/home/sergey/test/1c-syntax-mcp/venv/bin/python", "/home/sergey/test/1c-syntax-mcp/server.py"],
+      "command": ["~/1c-syntax-mcp/venv/bin/python", "~/1c-syntax-mcp/server.py"],
       "enabled": true
     }
   }
