@@ -207,7 +207,8 @@ def find_and_extract_syntax_hbk(script_dir: Path) -> tuple[bool, str]:
     if not hbk_file.exists():
         return False, f"Файл shcntx_ru.hbk не найден в {version_path}"
     
-    print(f"Найден файл: {hbk_file}", flush=True)
+    import sys
+    print(f"Найден файл: {hbk_file}", file=sys.stderr, flush=True)
     
     # Распаковываем
     output_dir = script_dir / "extracted_syntax"
@@ -216,7 +217,7 @@ def find_and_extract_syntax_hbk(script_dir: Path) -> tuple[bool, str]:
     if not success:
         return False, message
     
-    print(message, flush=True)
+    print(message, file=sys.stderr, flush=True)
     return True, str(output_dir)
 
 
@@ -232,12 +233,13 @@ def build_syntax_index(extracted_dir: Path, output_json: Path) -> bool:
     if not extracted_dir.exists():
         return False
     
+    import sys
     objects_path = extracted_dir / "objects"
     if not objects_path.exists():
-        print(f"Ошибка: директория {objects_path} не найдена", flush=True)
+        print(f"Ошибка: директория {objects_path} не найдена", file=sys.stderr, flush=True)
         return False
     
-    print(f"Построение индекса из {objects_path}...", flush=True)
+    print(f"Построение индекса из {objects_path}...", file=sys.stderr, flush=True)
     
     def parse_st(file_path):
         """Parse .st file to get ru and en strings."""
@@ -361,19 +363,19 @@ def build_syntax_index(extracted_dir: Path, output_json: Path) -> bool:
         for idx, item in enumerate(items, 1):
             if item.is_dir() and item.name not in ['__categories__'] and not item.name.startswith('.'):
                 if idx % 10 == 0:
-                    print(f"  Обработано {idx}/{total} объектов...", flush=True)
+                    print(f"  Обработано {idx}/{total} объектов...", file=sys.stderr, flush=True)
                 obj_node = process_object(str(item), item.name)
                 root["children"].append(obj_node)
         
-        print(f"Сохранение индекса в {output_json}...", flush=True)
+        print(f"Сохранение индекса в {output_json}...", file=sys.stderr, flush=True)
         with open(output_json, 'w', encoding='utf-8') as f:
             json.dump(root, f, ensure_ascii=False, indent=2)
         
-        print(f"✓ Индекс успешно создан", flush=True)
+        print(f"✓ Индекс успешно создан", file=sys.stderr, flush=True)
         return True
         
     except Exception as e:
-        print(f"Ошибка при построении индекса: {e}", flush=True)
+        print(f"Ошибка при построении индекса: {e}", file=sys.stderr, flush=True)
         return False
 
 
@@ -386,35 +388,37 @@ syntax_index = SyntaxIndex()
 
 async def main():
     """Запуск MCP сервера."""
+    import sys
+    
     script_dir = Path(__file__).parent
     json_path = script_dir / "syntax_tree.json"
     
     # Проверяем наличие индекса
     if not json_path.exists():
-        print("Индекс не найден. Инициализация...", flush=True)
+        print("Индекс не найден. Инициализация...", file=sys.stderr, flush=True)
         
         # Находим и распаковываем shcntx_ru.hbk
         success, result = find_and_extract_syntax_hbk(script_dir)
         
         if not success:
-            print(f"Ошибка инициализации: {result}", flush=True)
-            print("Попытка использовать существующий индекс...", flush=True)
+            print(f"Ошибка инициализации: {result}", file=sys.stderr, flush=True)
+            print("Попытка использовать существующий индекс...", file=sys.stderr, flush=True)
             if not json_path.exists():
-                print(f"Ошибка: файл {json_path} не найден", flush=True)
+                print(f"Ошибка: файл {json_path} не найден", file=sys.stderr, flush=True)
                 return
         else:
             extracted_dir = Path(result)
             
             # Строим индекс
             if not build_syntax_index(extracted_dir, json_path):
-                print("Не удалось построить индекс из распакованных файлов", flush=True)
+                print("Не удалось построить индекс из распакованных файлов", file=sys.stderr, flush=True)
                 if not json_path.exists():
-                    print(f"Ошибка: файл {json_path} не найден", flush=True)
+                    print(f"Ошибка: файл {json_path} не найден", file=sys.stderr, flush=True)
                     return
     
-    print(f"Загрузка индекса из {json_path}...", flush=True)
+    print(f"Загрузка индекса из {json_path}...", file=sys.stderr, flush=True)
     syntax_index.load(str(json_path))
-    print(f"Индекс загружен: {len(syntax_index.flat_index)} элементов", flush=True)
+    print(f"Индекс загружен: {len(syntax_index.flat_index)} элементов", file=sys.stderr, flush=True)
     
     async with stdio_server() as (read_stream, write_stream):
         await app.run(
