@@ -386,6 +386,224 @@ app = Server("1c-syntax-mcp")
 syntax_index = SyntaxIndex()
 
 
+@app.list_tools()
+async def list_tools() -> list[Tool]:
+    """Список доступных инструментов."""
+    return [
+        Tool(
+            name="search_syntax",
+            description="Поиск функций, методов или объектов 1С по имени (русский или английский)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Имя функции/метода для поиска (например: СтрДлина, StrLen)"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Максимальное количество результатов (по умолчанию 10)"
+                    }
+                },
+                "required": ["query"]
+            }
+        ),
+        Tool(
+            name="get_function_info",
+            description="Получить детальную информацию о функции или методе 1С",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Точное имя функции/метода (русский или английский)"
+                    }
+                },
+                "required": ["name"]
+            }
+        ),
+        Tool(
+            name="suggest_completion",
+            description="Предложить автодополнение по частичному имени функции",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "prefix": {
+                        "type": "string",
+                        "description": "Начало имени функции (например: Стр, Str)"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Максимальное количество предложений (по умолчанию 10)"
+                    }
+                },
+                "required": ["prefix"]
+            }
+        ),
+        Tool(
+            name="validate_syntax",
+            description="Проверить корректность синтаксиса вызова функции 1С",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "Код для проверки (например: СтрДлина(\"текст\"))"
+                    }
+                },
+                "required": ["code"]
+            }
+        )
+    ]
+
+
+@app.call_tool()
+async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    """Обработка вызовов инструментов."""
+    
+    if name == "search_syntax":
+        query = arguments.get("query", "")
+        limit = arguments.get("limit", 10)
+        
+        results = syntax_index.search(query, limit)
+        
+        if not results:
+            return [TextContent(
+                type="text",
+                text=f"Ничего не найдено по запросу: {query}"
+            )]
+        
+        # Форматируем результаты
+        output = f"Найдено результатов: {len(results)}\n\n"
+        for i, item in enumerate(results, 1):
+            node = item['node']
+            details = node.get('details', {})
+            localized = details.get('localized_name', {})
+            
+            output += f"{i}. {item['name_ru']} / {item['name_en']}\n"
+            output += f"   Тип: {item['type']}\n"
+            
+            # Добавляем сигнатуру если есть
+            signature = details.get('signature', '')
+            if signature:
+                # Убираем HTML теги
+                import re
+                signature_clean = re.sub(r'<[^>]+>', '', signature)
+                output += f"   Синтаксис: {signature_clean}\n"
+            
+            output += "\n"
+        
+        return [TextContent(type="text", text=output)]
+    
+    elif name == "get_function_info":
+        func_name = arguments.get("name", "")
+        
+        item = syntax_index.get_by_name(func_name)
+        
+        if not item:
+            return [TextContent(
+                type="text",
+                text=f"Функция не найдена: {func_name}"
+            )]
+        
+        node = item['node']
+        details = node.get('details', {})
+        localized = details.get('localized_name', {})
+        
+        # Форматируем детальную информацию
+        output = f"=== {item['name_ru']} / {item['name_en']} ===\n\n"
+        output += f"Тип: {item['type']}\n\n"
+        
+        # Сигнатура
+        signature = details.get('signature', '')
+        if signature:
+            import re
+            signature_clean = re.sub(r'<[^>]+>', '', signature)
+            output += f"Синтаксис:\n{signature_clean}\n\n"
+        
+        # Параметры
+        parameters = details.get('parameters', '')
+        if parameters:
+            import re
+            params_clean = re.sub(r'<[^>]+>', '', parameters)
+            output += f"Параметры:\n{params_clean}\n\n"
+        
+        # Возвращаемое значение
+        return_value = details.get('return_value', '')
+        if return_value:
+            import re
+            return_clean = re.sub(r'<[^>]+>', '', return_value)
+            output += f"Возвращаемое значение:\n{return_clean}\n\n"
+        
+        # Описание
+        description = details.get('description', '')
+        if description:
+            import re
+            desc_clean = re.sub(r'<[^>]+>', '', description)
+            output += f"Описание:\n{desc_clean}\n"
+        
+        return [TextContent(type="text", text=output)]
+    
+    elif name == "suggest_completion":
+        prefix = arguments.get("prefix", "")
+        limit = arguments.get("limit", 10)
+        
+        suggestions = syntax_index.suggest_completions(prefix, limit)
+        
+        if not suggestions:
+            return [TextContent(
+                type="text",
+                text=f"Нет предложений для: {prefix}"
+            )]
+        
+        output = f"Предложения для '{prefix}':\n\n"
+        for i, suggestion in enumerate(suggestions, 1):
+            output += f"{i}. {suggestion}\n"
+        
+        return [TextContent(type="text", text=output)]
+    
+    elif name == "validate_syntax":
+        code = arguments.get("code", "")
+        
+        # Простая валидация: извлекаем имя функции и проверяем её существование
+        import re
+        match = re.match(r'(\w+)\s*\(', code)
+        
+        if not match:
+            return [TextContent(
+                type="text",
+                text="Не удалось распознать вызов функции в коде"
+            )]
+        
+        func_name = match.group(1)
+        item = syntax_index.get_by_name(func_name)
+        
+        if not item:
+            return [TextContent(
+                type="text",
+                text=f"❌ Функция '{func_name}' не найдена в синтаксисе 1С"
+            )]
+        
+        node = item['node']
+        details = node.get('details', {})
+        signature = details.get('signature', '')
+        
+        output = f"✓ Функция '{func_name}' существует\n\n"
+        
+        if signature:
+            import re
+            signature_clean = re.sub(r'<[^>]+>', '', signature)
+            output += f"Правильный синтаксис:\n{signature_clean}\n"
+        
+        return [TextContent(type="text", text=output)]
+    
+    else:
+        return [TextContent(
+            type="text",
+            text=f"Неизвестный инструмент: {name}"
+        )]
+
+
 async def main():
     """Запуск MCP сервера."""
     import sys
