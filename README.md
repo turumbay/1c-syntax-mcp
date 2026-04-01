@@ -129,6 +129,7 @@ use 1c-syntax to validate: СтрДлина("текст")
   "name": "СтрДлина"
 }
 ```
+![1C Syntax MCP](pics/pic.png)
 
 ### suggest_completion
 Предложить автодополнение по частичному имени.
