@@ -25,3 +25,4 @@ extracted_syntax/
 # OS
 .DS_Store
 Thumbs.db
+test_rar.py
