@@ -13,7 +13,7 @@ MCP-сервер для проверки синтаксиса 1С:Предпри
 ## Особенности
 
 При первом запуске сервер **автоматически**:
-1. Находит последнюю установленную версию 1С (8.3.x или 8.5.x) в `/opt/1cv8/x86_64`
+1. Находит последнюю установленную версию 1С (8.3.x или 8.5.x)
 2. Извлекает файл `shcntx_ru.hbk` с документацией по синтаксису
 3. Распаковывает его с помощью 7z (ZIP архив, ~52000 файлов)
 4. Парсит HTML файлы и строит JSON индекс (~24MB)
@@ -28,11 +28,11 @@ MCP-сервер для проверки синтаксиса 1С:Предпри
 ### 1. Создать виртуальное окружение
 
 ```bash
-cd ~/test/1c-syntax-mcp
-python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
-# или
+cd 1c-syntax-mcp
+python -m venv venv
 venv\Scripts\activate  # Windows
+# или
+source venv/bin/activate  # Linux/Mac
 ```
 
 ### 2. Установить зависимости
@@ -42,6 +42,10 @@ pip install mcp
 ```
 
 Также требуется 7z для распаковки .hbk файлов:
+
+**Windows:** Скачайте и установите с https://www.7-zip.org/ (добавьте в PATH или установите в стандартную директорию `C:\Program Files\7-Zip\`)
+
+**Linux:**
 ```bash
 sudo apt install p7zip-full  # Debian/Ubuntu
 # или
@@ -50,8 +54,22 @@ sudo yum install p7zip       # RHEL/CentOS
 
 ### 3. Настроить OpenCode
 
-Добавьте в `~/.config/opencode/opencode.jsonc`:
+Добавьте в `%APPDATA%\opencode\opencode.jsonc` (Windows) или `~/.config/opencode/opencode.jsonc` (Linux/Mac):
 
+**Windows:**
+```json
+{
+  "mcp": {
+    "1c-syntax": {
+      "type": "local",
+      "command": ["C:\\Users\\<username>\\1c-syntax-mcp\\venv\\Scripts\\python.exe", "C:\\Users\\<username>\\1c-syntax-mcp\\server.py"],
+      "enabled": true
+    }
+  }
+}
+```
+
+**Linux/Mac:**
 ```json
 {
   "mcp": {
@@ -178,6 +196,7 @@ use 1c-syntax to validate: СтрДлина("текст")
 - **Поддержка версий 1С:** 8.3.x, 8.5.x
 - **Поддержка языков:** Русский и английский
 - **Источник данных:** shcntx_ru.hbk из установленной платформы 1С
+- **Поддержка платформ:** Windows, Linux, macOS
 
 ## Troubleshooting
 
@@ -187,22 +206,34 @@ use 1c-syntax to validate: СтрДлина("текст")
 1. Виртуальное окружение активировано
 2. Библиотека mcp установлена: `pip list | grep mcp`
 3. Файл `syntax_tree.json` существует в директории проекта
-4. Установлен 7z: `which 7z`
+4. Установлен 7z: `7z --help` (Windows) или `which 7z` (Linux)
 
 ### Не найдена версия 1С
 
 Сервер ищет установки в:
+
+**Linux:**
 - `/opt/1cv8/x86_64/`
 - `/opt/1C/v8.3/x86_64/`
 - `/opt/1C/v8.5/x86_64/`
+
+**Windows:**
+- `C:\Program Files\1cv8\`
+- `C:\Program Files (x86)\1cv8\`
+- `C:\Program Files\1C\1CE\1cv8\`
 
 Убедитесь, что платформа 1С установлена в одном из этих каталогов.
 
 ### Файл shcntx_ru.hbk не найден
 
-Проверьте наличие файла:
+**Linux:**
 ```bash
 find /opt -name "shcntx_ru.hbk" 2>/dev/null
+```
+
+**Windows:**
+```cmd
+dir "C:\Program Files\1cv8" /s /b | findstr shcntx_ru.hbk
 ```
 
 Если файл отсутствует, возможно, установлена неполная версия платформы 1С.
@@ -214,7 +245,9 @@ find /opt -name "shcntx_ru.hbk" 2>/dev/null
 7z --help
 ```
 
-Если нет, установите:
+**Windows:** Скачайте с https://www.7-zip.org/
+
+**Linux:**
 ```bash
 sudo apt install p7zip-full
 ```

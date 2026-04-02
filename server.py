@@ -32,19 +32,48 @@ class SyntaxIndex:
         node_name = node.get('name', '')
         node_type = node.get('type', '')
         
-        # Создаем ключ для индекса
+        # Обрабатываем объекты (object) - у них имя напрямую в name
+        if node_type == 'object':
+            details = node.get('details', {})
+            localized = details.get('localized_name', {})
+            ru_name = localized.get('ru', node_name)
+            en_name = localized.get('en', node_name)
+            
+            key_ru = ru_name.lower()
+            key_en = en_name.lower()
+            
+            if key_ru:
+                if key_ru not in self.flat_index:
+                    self.flat_index[key_ru] = []
+                self.flat_index[key_ru].append({
+                    'path': path,
+                    'node': node,
+                    'name_ru': ru_name,
+                    'name_en': en_name,
+                    'type': node_type
+                })
+            
+            if key_en != key_ru:
+                if key_en not in self.flat_index:
+                    self.flat_index[key_en] = []
+                self.flat_index[key_en].append({
+                    'path': path,
+                    'node': node,
+                    'name_ru': ru_name,
+                    'name_en': en_name,
+                    'type': node_type
+                })
+        
+        # Обрабатываем методы, конструкторы, свойства
         if node_type in ['ctor', 'method', 'property']:
-            # Извлекаем имена из локализованных строк
             details = node.get('details', {})
             localized = details.get('localized_name', {})
             ru_name = localized.get('ru', '')
             en_name = localized.get('en', '')
             
-            # Извлекаем чистое имя функции (без параметров)
             ru_clean = ru_name.split('(')[0].strip() if ru_name else ''
             en_clean = en_name.split('(')[0].strip() if en_name else ''
             
-            # Добавляем в индекс по русскому имени
             if ru_clean:
                 key = ru_clean.lower()
                 if key not in self.flat_index:
@@ -119,11 +148,34 @@ class SyntaxIndex:
         return suggestions
 
 
+def find_7z() -> Optional[str]:
+    """Находит исполняемый файл 7z на разных платформах."""
+    import shutil
+    
+    # Сначала ищем в PATH
+    for name in ['7z', '7z.exe', '7za', '7za.exe']:
+        path = shutil.which(name)
+        if path:
+            return path
+    
+    # Windows: стандартные пути установки 7-Zip
+    if os.name == 'nt':
+        win_7z_paths = [
+            r"C:\Program Files\7-Zip\7z.exe",
+            r"C:\Program Files (x86)\7-Zip\7z.exe",
+        ]
+        for path in win_7z_paths:
+            if os.path.exists(path):
+                return path
+    
+    return None
+
+
 def extract_hbk(hbk_path: str, output_dir: str) -> tuple[bool, str]:
     """
     Распаковывает .hbk файл используя 7z.
     
-    Файлы .hbk являются ZIP архивами с дополнительными данными.
+    Файлы .hbk являются архивами 7z формата.
     
     Args:
         hbk_path: путь к .hbk файлу
@@ -135,20 +187,21 @@ def extract_hbk(hbk_path: str, output_dir: str) -> tuple[bool, str]:
     import subprocess
     import shutil
     
-    # Проверяем наличие 7z
-    if not shutil.which('7z') and not shutil.which('7za'):
-        return False, "Ошибка: 7z не установлен. Установите: sudo apt install p7zip-full"
-    
     if not os.path.exists(hbk_path):
         return False, f"Ошибка: файл {hbk_path} не найден"
+    
+    # Находим 7z
+    seven_zip = find_7z()
+    if not seven_zip:
+        return False, "Ошибка: 7z не установлен. Установите с https://www.7-zip.org/ или добавьте в PATH"
     
     try:
         # Создаем директорию для распаковки
         os.makedirs(output_dir, exist_ok=True)
         
         # Распаковываем с помощью 7z
-        cmd = ['7z', 'x', '-y', f'-o{output_dir}', hbk_path]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        cmd = [seven_zip, 'x', '-y', f'-o{output_dir}', hbk_path]
+        result = subprocess.run(cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
         
         if result.returncode != 0:
             return False, f"Ошибка при распаковке 7z: {result.stderr}"
@@ -175,12 +228,20 @@ def find_and_extract_syntax_hbk(script_dir: Path) -> tuple[bool, str]:
     Returns:
         tuple[bool, str]: (успех, сообщение)
     """
-    # Ищем последнюю версию 1С
+    # Ищем последнюю версию 1С - Linux пути
     base_paths = [
         Path("/opt/1cv8/x86_64"),
         Path("/opt/1C/v8.3/x86_64"),
-        Path("/opt/1C/v8.5/x86_64")
+        Path("/opt/1C/v8.5/x86_64"),
     ]
+    
+    # Windows пути установки 1С
+    if os.name == 'nt':
+        base_paths.extend([
+            Path(r"C:\Program Files\1cv8"),
+            Path(r"C:\Program Files (x86)\1cv8"),
+            Path(r"C:\Program Files\1C\1CE\1cv8"),
+        ])
     
     version_path = None
     for base_path in base_paths:
@@ -202,9 +263,19 @@ def find_and_extract_syntax_hbk(script_dir: Path) -> tuple[bool, str]:
     if not version_path:
         return False, "Не найдена установленная версия 1С"
     
-    # Ищем shcntx_ru.hbk
-    hbk_file = version_path / "shcntx_ru.hbk"
-    if not hbk_file.exists():
+    # Ищем shcntx_ru.hbk (в корне версии или в поддиректории bin)
+    search_paths = [
+        version_path / "shcntx_ru.hbk",
+        version_path / "bin" / "shcntx_ru.hbk",
+    ]
+    
+    hbk_file = None
+    for path in search_paths:
+        if path.exists():
+            hbk_file = path
+            break
+    
+    if not hbk_file:
         return False, f"Файл shcntx_ru.hbk не найден в {version_path}"
     
     import sys
@@ -272,12 +343,27 @@ def build_syntax_index(extracted_dir: Path, output_json: Path) -> bool:
                 return match.group(1).strip()
             return ""
         
-        return {
+        result = {
             "syntax": extract_section("Синтаксис"),
             "parameters": extract_section("Параметры"),
             "return_value": extract_section("Возвращаемое значение"),
             "description": extract_section("Описание")
         }
+        
+        # Извлекаем заголовок h1 для объектов (формат: "РусскоеИмя (EnglishName)")
+        h1_match = re.search(r'<h1[^>]*>(.*?)</h1>', content, re.DOTALL)
+        if h1_match:
+            h1_text = re.sub(r'<[^>]+>', '', h1_match.group(1)).strip()
+            # Формат: "ГруппаРезультатаПоискаПоРегулярномуВыражению (ResultOfSearchByRegularExpressionGroup)"
+            match = re.match(r'^(.+?)\s*\((.+?)\)$', h1_text)
+            if match:
+                result['ru_name'] = match.group(1).strip()
+                result['en_name'] = match.group(2).strip()
+            else:
+                result['ru_name'] = h1_text
+                result['en_name'] = h1_text
+        
+        return result
     
     def process_object(object_path, object_name):
         """Process an object directory and return its node."""
@@ -288,11 +374,22 @@ def build_syntax_index(extracted_dir: Path, output_json: Path) -> bool:
             "details": {}
         }
         
+        # Ищем HTML файла объекта: сначала в текущей директории, затем на уровень выше
         object_html = os.path.join(object_path, f"{object_name}.html")
+        if not os.path.exists(object_html):
+            parent_path = os.path.dirname(object_path)
+            object_html = os.path.join(parent_path, f"{object_name}.html")
+        
         if os.path.exists(object_html):
             obj_details = parse_html(object_html)
             if obj_details:
                 node["details"] = obj_details
+                # Сохраняем локализованное имя для flat_index
+                if 'ru_name' in obj_details:
+                    node["details"]["localized_name"] = {
+                        "ru": obj_details['ru_name'],
+                        "en": obj_details.get('en_name', object_name)
+                    }
         
         for category in ['ctors', 'methods', 'properties']:
             category_path = os.path.join(object_path, category)
@@ -506,9 +603,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 text=f"Функция не найдена: {func_name}"
             )]
         
+        import re
         node = item['node']
         details = node.get('details', {})
-        localized = details.get('localized_name', {})
         
         # Форматируем детальную информацию
         output = f"=== {item['name_ru']} / {item['name_en']} ===\n\n"
@@ -517,30 +614,68 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         # Сигнатура
         signature = details.get('signature', '')
         if signature:
-            import re
             signature_clean = re.sub(r'<[^>]+>', '', signature)
             output += f"Синтаксис:\n{signature_clean}\n\n"
         
         # Параметры
         parameters = details.get('parameters', '')
         if parameters:
-            import re
             params_clean = re.sub(r'<[^>]+>', '', parameters)
             output += f"Параметры:\n{params_clean}\n\n"
         
         # Возвращаемое значение
         return_value = details.get('return_value', '')
         if return_value:
-            import re
             return_clean = re.sub(r'<[^>]+>', '', return_value)
             output += f"Возвращаемое значение:\n{return_clean}\n\n"
         
         # Описание
         description = details.get('description', '')
         if description:
-            import re
             desc_clean = re.sub(r'<[^>]+>', '', description)
             output += f"Описание:\n{desc_clean}\n"
+        
+        # Для объектов показываем свойства и методы
+        if item['type'] == 'object':
+            children = node.get('children', [])
+            props = []
+            methods = []
+            for child in children:
+                if child.get('type') == 'category':
+                    cat_name = child.get('name', '')
+                    for sub in child.get('children', []):
+                        loc = sub.get('details', {}).get('localized_name', {})
+                        ru = loc.get('ru', sub.get('name', ''))
+                        en = loc.get('en', '')
+                        desc = sub.get('details', {}).get('description', '')
+                        desc_clean = re.sub(r'<[^>]+>', '', desc) if desc else ''
+                        
+                        entry = {
+                            'ru': ru,
+                            'en': en,
+                            'description': desc_clean
+                        }
+                        
+                        if cat_name == 'properties':
+                            props.append(entry)
+                        elif cat_name == 'methods':
+                            methods.append(entry)
+            
+            if props:
+                output += "\nСвойства:\n"
+                for p in props:
+                    output += f"  {p['ru']} ({p['en']})"
+                    if p['description']:
+                        output += f" — {p['description']}"
+                    output += "\n"
+            
+            if methods:
+                output += "\nМетоды:\n"
+                for m in methods:
+                    output += f"  {m['ru']} ({m['en']})"
+                    if m['description']:
+                        output += f" — {m['description']}"
+                    output += "\n"
         
         return [TextContent(type="text", text=output)]
     
