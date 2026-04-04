@@ -5,6 +5,8 @@ MCP-сервер для проверки синтаксиса 1С:Предпри
 Публикация на Инфостарт:
 https://infostart.ru/1c/articles/2657968/
 
+![Инфостарт](https://infostart.ru/bitrix/templates/sandbox_empty/assets/tpl/abo/img/logo.svg)
+
 ## Описание
 
 Этот MCP-сервер предоставляет инструменты для работы с синтаксисом 1С:
